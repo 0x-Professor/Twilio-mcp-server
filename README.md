@@ -1,175 +1,98 @@
 # Twilio SMS MCP Server
 
-Production-grade MCP server for Twilio Programmable Messaging.
-Lets any MCP-compatible AI agent (Claude, OpenAI, etc.) send, receive,
-schedule, and manage SMS/MMS messages via your Twilio number — 100% ToS-compliant.
+Twilio SMS MCP server for sending, receiving, scheduling, and inspecting SMS or MMS conversations through any MCP-compatible client.
 
----
+## Features
 
-## Tools
+- `sms_send`: send a single SMS or MMS
+- `sms_send_bulk`: send the same message to multiple recipients with bounded concurrency
+- `sms_schedule`: schedule a message for future delivery through a Twilio Messaging Service
+- `sms_cancel_scheduled`: cancel a scheduled message
+- `sms_list_sent`: inspect outbound messages
+- `sms_get_message`: fetch one message by SID
+- `sms_delete_message`: delete a message record from Twilio
+- `sms_list_inbox`: inspect inbound webhook-captured messages
+- `sms_get_conversation`: combine local inbox state with Twilio message history
+- `sms_mark_read`: mark inbox messages as read
+- `sms_list_numbers`: list Twilio phone numbers on the account
+- `sms_lookup_number`: inspect carrier and line-type information
+- `sms_account_info`: fetch account balance and status
 
-| Tool | What it does |
-|------|-------------|
-| `sms_send` | Send a single SMS or MMS |
-| `sms_send_bulk` | Send to multiple recipients concurrently |
-| `sms_schedule` | Schedule a message for future delivery |
-| `sms_cancel_scheduled` | Cancel a scheduled message |
-| `sms_list_sent` | List outbound messages with filters |
-| `sms_get_message` | Fetch one message by SID |
-| `sms_delete_message` | Delete a message record |
-| `sms_list_inbox` | List received messages (from webhook) |
-| `sms_get_conversation` | Full conversation thread with a number |
-| `sms_mark_read` | Mark messages as read |
-| `sms_list_numbers` | List your Twilio phone numbers |
-| `sms_lookup_number` | Carrier + line-type lookup |
-| `sms_account_info` | Account balance and status |
+## Requirements
 
----
+- Python 3.11+
+- A Twilio account and a Twilio phone number
+- For scheduled messages: a Twilio Messaging Service SID
+- For inbound messages: a publicly reachable webhook URL
+- Docker Desktop, if you want the container deployment path
 
-## Architecture
+## Local Setup
 
-```
-AI Agent (Claude / any MCP client)
-        │  stdio (MCP protocol)
-        ▼
-┌─────────────────────────────┐
-│   Docker Container          │
-│                             │
-│   MCP Server (FastMCP)      │ ◄── agent reads/writes SMS here
-│        │                    │
-│        ▼                    │
-│   SQLite inbox.db           │ ◄── shared state
-│        ▲                    │
-│        │                    │
-│   Webhook Server            │
-│   FastAPI :8080             │ ◄── Twilio POSTs inbound SMS here
-└─────────────────────────────┘
-        ▲
-        │  HTTPS webhook
-   Twilio Cloud
+```powershell
+Copy-Item env.example .env
+python -m pip install -e .[dev]
+pytest
 ```
 
----
+Fill in `.env` with your Twilio credentials before running the real server.
 
-## Prerequisites
+## Run Locally
 
-- [Twilio account](https://www.twilio.com/try-twilio) (free trial works)
-- A Twilio phone number (buy one in Console for ~$1/month)
-- Docker + Docker Compose
-- For receiving SMS: a public URL (use [ngrok](https://ngrok.com) for local dev)
+Start the MCP server and the webhook sidecar in one process:
 
----
-
-## Setup — 5 Steps
-
-### 1. Clone and configure
-
-```bash
-git clone https://github.com/0x-Professor/Twilio-mcp-server.git
-cd twilio-mcp-server
-cp env.example .env
+```powershell
+python -m twilio_sms_mcp.boot
 ```
 
-Edit `.env` and fill in your credentials from [console.twilio.com](https://console.twilio.com):
-```
-TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-TWILIO_AUTH_TOKEN=your_auth_token
-TWILIO_FROM_NUMBER=+12015551234
-```
+The webhook server listens on `http://127.0.0.1:8080` by default.
 
-### 2. Build and start
+## Docker
 
-```bash
-docker compose up --build
+Build the image:
+
+```powershell
+docker build -t twilio-sms-mcp .
 ```
 
-This starts:
-- **MCP server** on stdio (the agent connects here)
-- **Webhook server** on `http://localhost:8080`
+Run it with your local `.env` file:
 
-### 3. Expose webhook for receiving SMS (local dev)
-
-```bash
-# In a separate terminal
-ngrok http 8080
-# Copy the https URL, e.g. https://abc123.ngrok.io
+```powershell
+docker run --rm -i `
+  --env-file .env `
+  -p 8080:8080 `
+  -v twilio_sms_data:/data `
+  twilio-sms-mcp
 ```
 
-### 4. Configure Twilio webhooks
+## Webhook Notes
 
-Go to [console.twilio.com → Phone Numbers → Manage → Active Numbers](https://console.twilio.com/us1/develop/phone-numbers/manage/active-numbers)
-→ click your number → Messaging Configuration:
+- Configure Twilio to call `POST /webhook/sms` for inbound messages.
+- Configure Twilio to call `POST /webhook/status` for delivery callbacks.
+- Set `TWILIO_PUBLIC_WEBHOOK_BASE_URL` when the service runs behind ngrok, a reverse proxy, or a load balancer and the internal request URL differs from the public one.
+- Leave `TWILIO_VALIDATE_WEBHOOK_SIGNATURES=true` in production.
 
-| Field | Value |
-|-------|-------|
-| **A message comes in** → URL | `https://abc123.ngrok.io/webhook/sms` |
-| **A message comes in** → Method | `HTTP POST` |
-| **Status Callback URL** | `https://abc123.ngrok.io/webhook/status` |
+## Codex Registration
 
-### 5. Connect Claude Desktop
+This project supports a stable Codex registration path without copying secrets into Codex config. The server loads the `.env` file explicitly through `TWILIO_ENV_FILE`.
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "twilio-sms": {
-      "command": "docker",
-      "args": [
-        "run", "--rm", "-i",
-        "--env-file", "/absolute/path/to/your/.env",
-        "-v", "sms_data:/data",
-        "twilio-sms-mcp"
-      ]
-    }
-  }
-}
+```powershell
+codex mcp add twilio-sms `
+  --env TWILIO_ENV_FILE=U:\Twilio-mcp-server\.env `
+  --env PYTHONUNBUFFERED=1 `
+  -- C:\Users\PROFESSOR\AppData\Local\Python\pythoncore-3.14-64\python.exe -m twilio_sms_mcp.boot
 ```
 
-Restart Claude Desktop. You'll see the SMS tools available.
+Verify it:
 
----
+```powershell
+codex mcp get twilio-sms
+codex mcp list
+```
 
-## Example Agent Conversations
+## Production Notes
 
-**Send a message:**
-> "Send an SMS to +12025551234 saying the meeting is at 3pm"
-
-**Check inbox:**
-> "Do I have any unread messages?"
-
-**Read a conversation:**
-> "Show me my conversation with +12025551234"
-
-**Schedule a reminder:**
-> "Schedule an SMS to +12025551234 for tomorrow at 9am saying 'Don't forget the deadline today'"
-
-**Send bulk:**
-> "Text everyone on this list: [+1202..., +1415..., +1212...] that the event is cancelled"
-
----
-
-## Production Deployment
-
-For production (not just local dev):
-
-1. **Deploy to a server** with a static IP or domain — no ngrok needed
-2. **Use HTTPS** — Twilio requires HTTPS for webhooks in production
-3. **Set `TWILIO_WEBHOOK_AUTH_TOKEN`** — enables Twilio signature validation so only real Twilio requests hit your webhook
-4. **Use a Messaging Service** (`TWILIO_MESSAGING_SERVICE_SID`) for scheduled messages and better deliverability
-5. **Mount `/data` on persistent storage** so the inbox survives container restarts
-
----
-
-## Security Notes
-
-- Never commit `.env` to git — add it to `.gitignore`
-- The container runs as a non-root user (`appuser`)
-- Twilio signature validation is enabled when `TWILIO_WEBHOOK_AUTH_TOKEN` is set
-- The MCP server uses zero-trust: only the 13 declared tools are exposed
-
----
-
-## License
-
-MIT
+- Do not commit `.env`; it is ignored by `.gitignore` and excluded from Docker build context.
+- Use HTTPS for webhook delivery.
+- Prefer `TWILIO_MESSAGING_SERVICE_SID` for scheduled messages and sender pooling.
+- Persist `/data` so inbox state and delivery status survive restarts.
+- Keep webhook signature validation enabled unless you are diagnosing a local URL-mismatch problem.
