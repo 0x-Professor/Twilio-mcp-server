@@ -73,13 +73,15 @@ docker run --rm -i `
 
 ## Codex Registration
 
-This project supports a stable Codex registration path without copying secrets into Codex config. The server loads the `.env` file explicitly through `TWILIO_ENV_FILE`.
+This project supports a stable Codex registration path without copying secrets into Codex config. The Docker-backed registration below is the same flow that was validated locally.
 
 ```powershell
 codex mcp add twilio-sms `
-  --env TWILIO_ENV_FILE=U:\Twilio-mcp-server\.env `
-  --env PYTHONUNBUFFERED=1 `
-  -- C:\Users\PROFESSOR\AppData\Local\Python\pythoncore-3.14-64\python.exe -m twilio_sms_mcp.boot
+  -- docker run --rm -i `
+  --env-file U:\Twilio-mcp-server\.env `
+  -p 8080:8080 `
+  -v twilio_sms_data:/data `
+  twilio-sms-mcp
 ```
 
 Verify it:
