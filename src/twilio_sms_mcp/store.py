@@ -62,6 +62,7 @@ def _timestamp() -> str:
 
 def store_inbound(data: dict[str, str]) -> None:
     """Persist an inbound message from a Twilio webhook payload."""
+    init_db()
     media_urls: list[str] = []
     num_media = int(data.get("NumMedia", 0))
     for index in range(num_media):
@@ -90,6 +91,7 @@ def store_inbound(data: dict[str, str]) -> None:
 
 def update_delivery_status(data: dict[str, str]) -> None:
     """Store a Twilio delivery status callback."""
+    init_db()
     with _conn() as conn:
         conn.execute(
             """
@@ -118,6 +120,7 @@ def get_inbox(
     limit: int = 20,
     offset: int = 0,
 ) -> list[dict[str, object]]:
+    init_db()
     query = "SELECT * FROM inbox WHERE 1=1"
     params: list[object] = []
 
@@ -136,17 +139,20 @@ def get_inbox(
 
 
 def count_unread() -> int:
+    init_db()
     with _conn() as conn:
         return int(conn.execute("SELECT COUNT(*) FROM inbox WHERE read = 0").fetchone()[0])
 
 
 def mark_read(sid: str) -> int:
+    init_db()
     with _conn() as conn:
         cursor = conn.execute("UPDATE inbox SET read = 1 WHERE sid = ? AND read = 0", (sid,))
         return cursor.rowcount
 
 
 def mark_all_read(from_number: str | None = None) -> int:
+    init_db()
     with _conn() as conn:
         if from_number:
             cursor = conn.execute(
@@ -159,6 +165,7 @@ def mark_all_read(from_number: str | None = None) -> int:
 
 
 def get_conversation(number: str, limit: int = 50) -> list[dict[str, object]]:
+    init_db()
     with _conn() as conn:
         rows = conn.execute(
             """
@@ -173,6 +180,7 @@ def get_conversation(number: str, limit: int = 50) -> list[dict[str, object]]:
 
 
 def get_read_statuses(sids: Iterable[str]) -> dict[str, bool]:
+    init_db()
     unique_sids = sorted({sid for sid in sids if sid})
     if not unique_sids:
         return {}
@@ -187,6 +195,7 @@ def get_read_statuses(sids: Iterable[str]) -> dict[str, bool]:
 
 
 def get_latest_delivery_status(sid: str) -> dict[str, object] | None:
+    init_db()
     with _conn() as conn:
         row = conn.execute(
             """

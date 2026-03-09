@@ -134,8 +134,8 @@ async def list_phone_numbers() -> list[dict[str, Any]]:
                     "mms": capabilities.get("mms"),
                     "voice": capabilities.get("voice"),
                 },
-                "sms_url": number.sms_url,
-                "status_callback": number.status_callback,
+                "sms_url": getattr(number, "sms_url", None),
+                "status_callback": getattr(number, "status_callback", None),
                 "date_created": str(number.date_created),
             }
         )
