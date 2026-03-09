@@ -7,21 +7,21 @@ def test_webhook_persists_inbound_message():
     from twilio_sms_mcp import store
     from twilio_sms_mcp.webhook import app
 
-    client = TestClient(app)
     sid = f"SM{'2' * 32}"
-    response = client.post(
-        "/webhook/sms",
-        data={
-            "MessageSid": sid,
-            "From": "+12025550123",
-            "To": "+12025550100",
-            "Body": "hi from webhook",
-            "NumMedia": "0",
-        },
-    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/webhook/sms",
+            data={
+                "MessageSid": sid,
+                "From": "+12025550123",
+                "To": "+12025550100",
+                "Body": "hi from webhook",
+                "NumMedia": "0",
+            },
+        )
 
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("application/xml")
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("application/xml")
 
     inbox = store.get_inbox()
     assert len(inbox) == 1
@@ -31,6 +31,6 @@ def test_webhook_persists_inbound_message():
 def test_health_endpoints():
     from twilio_sms_mcp.webhook import app
 
-    client = TestClient(app)
-    assert client.get("/healthz").json() == {"status": "ok"}
-    assert client.get("/readyz").json() == {"status": "ready"}
+    with TestClient(app) as client:
+        assert client.get("/healthz").json() == {"status": "ok"}
+        assert client.get("/readyz").json() == {"status": "ready"}

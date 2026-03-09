@@ -39,7 +39,7 @@ async def test_mcp_lists_expected_tools_and_reads_inbox():
             "sms_account_info",
         }
 
-        result = await client.call_tool("sms_list_inbox", {"limit": 10})
+        result = await client.call_tool("sms_list_inbox", {"params": {"limit": 10}})
         payload = json.loads(result.content[0].text)
         assert payload["count"] == 1
         assert payload["messages"][0]["body"] == "hello from mcp"
