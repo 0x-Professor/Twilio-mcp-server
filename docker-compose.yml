@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  twilio-sms-mcp:
+    build: .
+    container_name: twilio-sms-mcp
+    restart: unless-stopped
+
+    # Load credentials from .env file (never hardcode these)
+    env_file:
+      - .env
+
+    ports:
+      # Exposes the webhook server so Twilio can POST inbound messages to it.
+      # Use ngrok or a reverse proxy to make this publicly reachable:
+      #   ngrok http 8080   →  then set https://<ngrok-url>/webhook/sms in Twilio Console
+      - "8080:8080"
+
+    volumes:
+      # Persist SQLite inbox across container restarts
+      - sms_data:/data
+
+    # The MCP server communicates via stdio — keep stdin open
+    stdin_open: true
+    tty: false
+
+volumes:
+  sms_data:
