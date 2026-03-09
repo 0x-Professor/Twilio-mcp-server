@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "mcp[cli]>=1.0.0",
-    "fastmcp>=2.0.0",
+    "fastmcp>=3.0.0",
     "twilio>=9.0.0",
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [project.scripts]
-twilio-sms-mcp = "twilio_sms_mcp.server:main"
+twilio-mcp-server = "twilio_mcp_server.server:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/twilio_sms_mcp"]
+packages = ["src/twilio_mcp_server"]

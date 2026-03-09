@@ -65,8 +65,8 @@ AI Agent (Claude / any MCP client)
 ### 1. Clone and configure
 
 ```bash
-git clone <your-repo>
-cd twilio-sms-mcp
+git clone https://github.com/0x-Professor/Twilio-mcp-server.git
+cd twilio-mcp-server
 cp env.example .env
 ```
 
