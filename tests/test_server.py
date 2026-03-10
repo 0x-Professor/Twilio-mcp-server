@@ -64,4 +64,4 @@ async def test_mcp_exposes_resources():
     async with Client(mcp) as client:
         resources = await client.list_resources()
         resource_uris = {str(r.uri) for r in resources}
-        assert any("twilio://account" in uri for uri in resource_uris)
+        assert "twilio://account" in resource_uris

@@ -130,7 +130,7 @@ def get_inbox(
     if unread_only:
         query += " AND read = 0"
 
-    query += " ORDER BY received_at DESC LIMIT ? OFFSET ?"
+    query += " ORDER BY received_at DESC, rowid DESC LIMIT ? OFFSET ?"
     params.extend([limit, offset])
 
     with _conn() as conn:
@@ -202,7 +202,7 @@ def get_latest_delivery_status(sid: str) -> dict[str, object] | None:
             SELECT sid, status, error_code, updated_at
             FROM delivery_status
             WHERE sid = ?
-            ORDER BY updated_at DESC
+            ORDER BY id DESC
             LIMIT 1
             """,
             (sid,),
