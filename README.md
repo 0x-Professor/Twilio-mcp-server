@@ -63,7 +63,7 @@ Send, receive, schedule, redact, and inspect SMS/MMS conversations through any M
 ## Quick Start
 
 ```bash
-cp env.example .env          # fill in your Twilio credentials
+cp env.example .env          # fill in your Twilio credentials; for local runs set TWILIO_DB_PATH=inbox.db
 pip install -e ".[dev]"
 pytest                        # run the test suite
 python -m twilio_sms_mcp.boot # start MCP + webhook server
@@ -85,8 +85,7 @@ Add to your VS Code `settings.json` or `.vscode/mcp.json`:
         "env": {
           "TWILIO_ACCOUNT_SID": "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
           "TWILIO_AUTH_TOKEN": "your_auth_token_here",
-          "TWILIO_FROM_NUMBER": "+12025551234",
-          "TWILIO_VALIDATE_WEBHOOK_SIGNATURES": "false"
+          "TWILIO_FROM_NUMBER": "+12025551234"
         }
       }
     }
@@ -107,8 +106,7 @@ Add to `claude_desktop_config.json` (macOS: `~/Library/Application Support/Claud
       "env": {
         "TWILIO_ACCOUNT_SID": "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
         "TWILIO_AUTH_TOKEN": "your_auth_token_here",
-        "TWILIO_FROM_NUMBER": "+12025551234",
-        "TWILIO_VALIDATE_WEBHOOK_SIGNATURES": "false"
+        "TWILIO_FROM_NUMBER": "+12025551234"
       }
     }
   }
@@ -176,6 +174,9 @@ docker compose up -d
 | `WEBHOOK_PORT` | No | `8080` | Webhook HTTP server port |
 | `TWILIO_API_RETRY_ATTEMPTS` | No | `3` | Retry count for transient API errors |
 | `TWILIO_API_RETRY_DELAY` | No | `1.0` | Base delay in seconds between retries |
+| `MCP_TRANSPORT` | No | `stdio` | MCP transport: `stdio`, `sse`, or `http` |
+| `MCP_HOST` | No | `0.0.0.0` | Bind address for SSE/HTTP transport |
+| `MCP_PORT` | No | `8000` | Port for SSE/HTTP transport |
 
 ## Testing
 

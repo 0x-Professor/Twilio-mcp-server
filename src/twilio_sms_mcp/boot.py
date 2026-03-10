@@ -31,7 +31,7 @@ def main() -> None:
         )
     )
     threading.Thread(target=webhook_server.run, name="twilio-webhook", daemon=True).start()
-    logger.info("Webhook server listening on 0.0.0.0:%d", settings.webhook_port)
+    logger.info("Starting webhook server on 0.0.0.0:%d", settings.webhook_port)
 
     if settings.mcp_transport in ("sse", "http"):
         logger.info(

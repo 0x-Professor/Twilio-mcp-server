@@ -149,6 +149,12 @@ class FormatNumberInput(BaseModel):
         max_length=20,
         description="Phone number in any common format to validate and reformat to E.164.",
     )
+    country_code: str | None = Field(
+        default=None,
+        min_length=2,
+        max_length=2,
+        description="ISO 3166-1 alpha-2 country code (e.g. 'US') for disambiguating national numbers.",
+    )
 
 
 class UsageStatsInput(BaseModel):
@@ -184,7 +190,7 @@ def draft_sms(to: str, topic: str) -> str:
     """Help the user draft an SMS to *to* about *topic*."""
     return (
         f"Draft a concise SMS message to {to} about: {topic}. "
-        "Keep it under 160 characters if possible.  Return only the message body."
+        "Keep it under 160 characters if possible. Return only the message body."
     )
 
 
@@ -480,7 +486,7 @@ async def sms_redact_message(params: SidInput) -> str:
 async def sms_format_number(params: FormatNumberInput) -> str:
     """Validate a phone number and return its E.164 form, national format, and country code."""
     try:
-        result = await twilio_client.format_number(params.phone_number)
+        result = await twilio_client.format_number(params.phone_number, country_code=params.country_code)
         return _json(result)
     except Exception as error:
         return _json({"success": False, "error": twilio_client.handle_error(error)})
@@ -493,15 +499,16 @@ async def sms_format_number(params: FormatNumberInput) -> str:
 async def sms_usage_stats(params: UsageStatsInput) -> str:
     """Retrieve daily SMS/MMS usage statistics for the account, useful for cost monitoring and analytics."""
     try:
+        from decimal import Decimal
         records = await twilio_client.get_usage_records(category=params.category, days=params.days)
         total_count = sum(int(r.get("count") or 0) for r in records)
-        total_price = sum(float(r.get("price") or 0) for r in records)
+        total_price = sum(Decimal(r.get("price") or "0") for r in records)
         return _json({
             "category": params.category,
             "days": params.days,
             "total_messages": total_count,
             "total_cost": f"{total_price:.4f}",
-            "currency": records[0]["price_unit"] if records else "USD",
+            "currency": (records[0].get("price_unit") or "USD") if records else "USD",
             "daily_records": records,
         })
     except Exception as error:

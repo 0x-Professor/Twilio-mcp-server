@@ -17,7 +17,8 @@ logger = logging.getLogger(__name__)
 _client: Client | None = None
 
 # Twilio error codes that are safe to retry (transient failures).
-_RETRYABLE_CODES: frozenset[int] = frozenset({20429, 20500, 20503, 503})
+# These are 5-digit Twilio application error codes, NOT HTTP status codes.
+_RETRYABLE_CODES: frozenset[int] = frozenset({20429, 20500, 20503})
 _RETRYABLE_HTTP: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 
 
@@ -27,10 +28,6 @@ def get_client() -> Client:
     if _client is None:
         _client = Client(settings.account_sid, settings.auth_token.get_secret_value())
     return _client
-
-
-async def _run(fn, *args, **kwargs) -> Any:
-    return await asyncio.to_thread(fn, *args, **kwargs)
 
 
 async def _run_with_retry(fn, *args, **kwargs) -> Any:
@@ -94,7 +91,9 @@ async def send_message(
         params["send_at"] = schedule_time.astimezone(timezone.utc)
 
     logger.info("Sending message to %s", to)
-    message = await _run_with_retry(client.messages.create, **params)
+    # Do NOT retry message creation — a timeout after Twilio accepts the
+    # POST could result in duplicate messages being sent.
+    message = await asyncio.to_thread(client.messages.create, **params)
     return _message_to_dict(message)
 
 
@@ -208,11 +207,15 @@ async def lookup_number(phone_number: str) -> dict[str, Any]:
     }
 
 
-async def format_number(phone_number: str) -> dict[str, Any]:
+async def format_number(phone_number: str, country_code: str | None = None) -> dict[str, Any]:
     """Validate and return formatting details for a phone number."""
     client = get_client()
+    kwargs: dict[str, Any] = {}
+    if country_code:
+        kwargs["country_code"] = country_code
     result = await _run_with_retry(
         client.lookups.v2.phone_numbers(phone_number).fetch,
+        **kwargs,
     )
     return {
         "phone_number": result.phone_number,
@@ -255,7 +258,7 @@ async def get_usage_records(category: str = "sms", days: int = 30) -> list[dict[
             "end_date": str(record.end_date),
             "count": record.count,
             "count_unit": record.count_unit,
-            "price": str(record.price) if record.price else None,
+            "price": str(record.price) if record.price is not None else None,
             "price_unit": record.price_unit,
             "usage": record.usage,
             "usage_unit": record.usage_unit,

@@ -1,4 +1,4 @@
-"""Comprehensive tests for all 16 MCP tools with mocked Twilio API."""
+﻿"""Comprehensive tests for all 16 MCP tools with mocked Twilio API."""
 
 from __future__ import annotations
 
@@ -6,10 +6,12 @@ import json
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastmcp import Client
+from fastmcp.exceptions import ToolError
+from pydantic import ValidationError
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -143,7 +145,7 @@ class TestSmsSend:
         from twilio_sms_mcp.server import mcp
 
         async with Client(mcp) as client:
-            with pytest.raises(Exception):
+            with pytest.raises((ToolError, ValidationError, ValueError)):
                 await client.call_tool("sms_send", {
                     "params": {"to": "not-a-number", "body": "Hi"}
                 })
@@ -152,7 +154,7 @@ class TestSmsSend:
         from twilio_sms_mcp.server import mcp
 
         async with Client(mcp) as client:
-            with pytest.raises(Exception):
+            with pytest.raises((ToolError, ValidationError, ValueError)):
                 await client.call_tool("sms_send", {
                     "params": {"to": "+12025559999", "body": ""}
                 })
@@ -213,7 +215,7 @@ class TestSmsSendBulk:
         from twilio_sms_mcp.server import mcp
 
         async with Client(mcp) as client:
-            with pytest.raises(Exception):
+            with pytest.raises((ToolError, ValidationError, ValueError)):
                 await client.call_tool("sms_send_bulk", {
                     "params": {
                         "to": ["+12025559901", "+12025559901"],
@@ -261,7 +263,7 @@ class TestSmsSchedule:
         too_soon = datetime.now(timezone.utc) + timedelta(minutes=5)
 
         async with Client(mcp) as client:
-            with pytest.raises(Exception):
+            with pytest.raises((ToolError, ValidationError, ValueError)):
                 await client.call_tool("sms_schedule", {
                     "params": {
                         "to": "+12025559999",
@@ -276,7 +278,7 @@ class TestSmsSchedule:
         too_far = datetime.now(timezone.utc) + timedelta(days=40)
 
         async with Client(mcp) as client:
-            with pytest.raises(Exception):
+            with pytest.raises((ToolError, ValidationError, ValueError)):
                 await client.call_tool("sms_schedule", {
                     "params": {
                         "to": "+12025559999",
@@ -291,7 +293,7 @@ class TestSmsSchedule:
         naive = datetime.now() + timedelta(hours=1)
 
         async with Client(mcp) as client:
-            with pytest.raises(Exception):
+            with pytest.raises((ToolError, ValidationError, ValueError)):
                 await client.call_tool("sms_schedule", {
                     "params": {
                         "to": "+12025559999",
@@ -363,7 +365,7 @@ class TestSmsCancelScheduled:
         from twilio_sms_mcp.server import mcp
 
         async with Client(mcp) as client:
-            with pytest.raises(Exception):
+            with pytest.raises((ToolError, ValidationError, ValueError)):
                 await client.call_tool("sms_cancel_scheduled", {
                     "params": {"sid": "INVALID_SID"}
                 })
@@ -859,7 +861,7 @@ class TestSmsMarkRead:
         from twilio_sms_mcp.server import mcp
 
         async with Client(mcp) as client:
-            with pytest.raises(Exception):
+            with pytest.raises((ToolError, ValidationError, ValueError)):
                 await client.call_tool("sms_mark_read", {
                     "params": {
                         "sid": f"SM{'a' * 32}",
