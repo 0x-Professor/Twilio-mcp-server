@@ -31,11 +31,14 @@ async def test_mcp_lists_expected_tools_and_reads_inbox():
             "sms_list_sent",
             "sms_get_message",
             "sms_delete_message",
+            "sms_redact_message",
             "sms_list_inbox",
             "sms_get_conversation",
             "sms_mark_read",
             "sms_list_numbers",
             "sms_lookup_number",
+            "sms_format_number",
+            "sms_usage_stats",
             "sms_account_info",
         }
 
@@ -43,3 +46,22 @@ async def test_mcp_lists_expected_tools_and_reads_inbox():
         payload = json.loads(result.content[0].text)
         assert payload["count"] == 1
         assert payload["messages"][0]["body"] == "hello from mcp"
+
+
+async def test_mcp_exposes_prompts():
+    from twilio_sms_mcp.server import mcp
+
+    async with Client(mcp) as client:
+        prompts = await client.list_prompts()
+        prompt_names = {p.name for p in prompts}
+        assert "draft_sms" in prompt_names
+        assert "summarize_conversation" in prompt_names
+
+
+async def test_mcp_exposes_resources():
+    from twilio_sms_mcp.server import mcp
+
+    async with Client(mcp) as client:
+        resources = await client.list_resources()
+        resource_uris = {str(r.uri) for r in resources}
+        assert any("twilio://account" in uri for uri in resource_uris)

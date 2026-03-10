@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import sys
 from functools import lru_cache
 from pathlib import Path
 
@@ -29,6 +31,27 @@ def _load_environment() -> Path | None:
 LOADED_ENV_FILE = _load_environment()
 
 
+def setup_logging(level: str = "INFO") -> None:
+    """Configure structured logging for the whole application."""
+    log_level = getattr(logging, level.upper(), logging.INFO)
+    formatter = logging.Formatter(
+        fmt="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S%z",
+    )
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(formatter)
+
+    root = logging.getLogger()
+    root.setLevel(log_level)
+    # Avoid duplicate handlers on reload
+    root.handlers = [handler]
+
+    # Quiet noisy libraries
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+
+
 class Settings(BaseSettings):
     """Application settings loaded from the process environment."""
 
@@ -47,6 +70,8 @@ class Settings(BaseSettings):
     webhook_port: int = Field(default=8080, alias="WEBHOOK_PORT", ge=1, le=65535)
     bulk_send_concurrency: int = Field(default=10, alias="TWILIO_BULK_SEND_CONCURRENCY", ge=1, le=20)
     log_level: str = Field(default="INFO", alias="TWILIO_LOG_LEVEL")
+    api_retry_attempts: int = Field(default=3, alias="TWILIO_API_RETRY_ATTEMPTS", ge=0, le=10)
+    api_retry_delay: float = Field(default=1.0, alias="TWILIO_API_RETRY_DELAY", ge=0.1, le=30.0)
 
     @field_validator("messaging_service_sid", mode="before")
     @classmethod
@@ -79,6 +104,15 @@ class Settings(BaseSettings):
         if not value.startswith(("http://", "https://")):
             raise ValueError("TWILIO_PUBLIC_WEBHOOK_BASE_URL must start with http:// or https://.")
         return value.rstrip("/")
+
+    @field_validator("log_level")
+    @classmethod
+    def _validate_log_level(cls, value: str) -> str:
+        allowed = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        normalized = value.upper()
+        if normalized not in allowed:
+            raise ValueError(f"log_level must be one of {allowed}")
+        return normalized
 
     @property
     def effective_webhook_auth_token(self) -> str:

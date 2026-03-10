@@ -1,8 +1,9 @@
-"""Async wrappers around the synchronous Twilio Python SDK."""
+"""Async wrappers around the synchronous Twilio Python SDK with retry logic."""
 
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
@@ -11,7 +12,13 @@ from twilio.rest import Client
 
 from .config import get_settings
 
+logger = logging.getLogger(__name__)
+
 _client: Client | None = None
+
+# Twilio error codes that are safe to retry (transient failures).
+_RETRYABLE_CODES: frozenset[int] = frozenset({20429, 20500, 20503, 503})
+_RETRYABLE_HTTP: frozenset[int] = frozenset({429, 500, 502, 503, 504})
 
 
 def get_client() -> Client:
@@ -24,6 +31,41 @@ def get_client() -> Client:
 
 async def _run(fn, *args, **kwargs) -> Any:
     return await asyncio.to_thread(fn, *args, **kwargs)
+
+
+async def _run_with_retry(fn, *args, **kwargs) -> Any:
+    """Execute *fn* in a thread with exponential-backoff retry on transient errors."""
+    settings = get_settings()
+    max_attempts = settings.api_retry_attempts
+    base_delay = settings.api_retry_delay
+
+    last_error: Exception | None = None
+    for attempt in range(max_attempts + 1):
+        try:
+            return await asyncio.to_thread(fn, *args, **kwargs)
+        except TwilioRestException as exc:
+            last_error = exc
+            retryable = exc.code in _RETRYABLE_CODES or exc.status in _RETRYABLE_HTTP
+            if not retryable or attempt >= max_attempts:
+                raise
+            delay = base_delay * (2 ** attempt)
+            logger.warning(
+                "Twilio API error %s (HTTP %s), retry %d/%d in %.1fs",
+                exc.code, exc.status, attempt + 1, max_attempts, delay,
+            )
+            await asyncio.sleep(delay)
+        except (ConnectionError, TimeoutError, OSError) as exc:
+            last_error = exc
+            if attempt >= max_attempts:
+                raise
+            delay = base_delay * (2 ** attempt)
+            logger.warning(
+                "Network error %s, retry %d/%d in %.1fs",
+                type(exc).__name__, attempt + 1, max_attempts, delay,
+            )
+            await asyncio.sleep(delay)
+
+    raise last_error  # type: ignore[misc]  # pragma: no cover
 
 
 async def send_message(
@@ -51,13 +93,14 @@ async def send_message(
         params["schedule_type"] = "fixed"
         params["send_at"] = schedule_time.astimezone(timezone.utc)
 
-    message = await _run(client.messages.create, **params)
+    logger.info("Sending message to %s", to)
+    message = await _run_with_retry(client.messages.create, **params)
     return _message_to_dict(message)
 
 
 async def fetch_message(sid: str) -> dict[str, Any]:
     client = get_client()
-    message = await _run(client.messages(sid).fetch)
+    message = await _run_with_retry(client.messages(sid).fetch)
     return _message_to_dict(message)
 
 
@@ -76,7 +119,7 @@ async def list_messages(
     if from_:
         kwargs["from_"] = from_
 
-    messages = await _run(client.messages.list, **kwargs)
+    messages = await _run_with_retry(client.messages.list, **kwargs)
     return [_message_to_dict(message) for message in messages]
 
 
@@ -108,19 +151,27 @@ async def list_conversation(number: str, limit: int = 50) -> list[dict[str, Any]
 
 async def cancel_message(sid: str) -> dict[str, Any]:
     client = get_client()
-    message = await _run(client.messages(sid).update, status="canceled")
+    message = await _run_with_retry(client.messages(sid).update, status="canceled")
     return _message_to_dict(message)
 
 
 async def delete_message(sid: str) -> bool:
     client = get_client()
-    await _run(client.messages(sid).delete)
+    await _run_with_retry(client.messages(sid).delete)
     return True
+
+
+async def redact_message(sid: str) -> dict[str, Any]:
+    """Redact a message body by setting it to empty string (Twilio retains metadata)."""
+    client = get_client()
+    message = await _run_with_retry(client.messages(sid).update, body="")
+    logger.info("Redacted message %s", sid)
+    return _message_to_dict(message)
 
 
 async def list_phone_numbers() -> list[dict[str, Any]]:
     client = get_client()
-    numbers = await _run(client.incoming_phone_numbers.list)
+    numbers = await _run_with_retry(client.incoming_phone_numbers.list)
     results: list[dict[str, Any]] = []
     for number in numbers:
         capabilities = getattr(number, "capabilities", {}) or {}
@@ -144,7 +195,7 @@ async def list_phone_numbers() -> list[dict[str, Any]]:
 
 async def lookup_number(phone_number: str) -> dict[str, Any]:
     client = get_client()
-    result = await _run(
+    result = await _run_with_retry(
         client.lookups.v2.phone_numbers(phone_number).fetch,
         fields="line_type_intelligence",
     )
@@ -157,12 +208,27 @@ async def lookup_number(phone_number: str) -> dict[str, Any]:
     }
 
 
+async def format_number(phone_number: str) -> dict[str, Any]:
+    """Validate and return formatting details for a phone number."""
+    client = get_client()
+    result = await _run_with_retry(
+        client.lookups.v2.phone_numbers(phone_number).fetch,
+    )
+    return {
+        "phone_number": result.phone_number,
+        "country_code": result.country_code,
+        "national_format": result.national_format,
+        "valid": result.valid,
+        "calling_country_code": getattr(result, "calling_country_code", None),
+    }
+
+
 async def get_account_info() -> dict[str, Any]:
     settings = get_settings()
     client = get_client()
     account, balance = await asyncio.gather(
-        _run(client.api.accounts(settings.account_sid).fetch),
-        _run(client.balance.fetch),
+        _run_with_retry(client.api.accounts(settings.account_sid).fetch),
+        _run_with_retry(client.balance.fetch),
     )
     return {
         "account_sid": account.sid,
@@ -172,6 +238,30 @@ async def get_account_info() -> dict[str, Any]:
         "balance": balance.balance,
         "currency": balance.currency,
     }
+
+
+async def get_usage_records(category: str = "sms", days: int = 30) -> list[dict[str, Any]]:
+    """Fetch recent usage records for the given category."""
+    client = get_client()
+    records = await _run_with_retry(
+        client.usage.records.daily.list,
+        category=category,
+        limit=days,
+    )
+    return [
+        {
+            "category": str(record.category),
+            "start_date": str(record.start_date),
+            "end_date": str(record.end_date),
+            "count": record.count,
+            "count_unit": record.count_unit,
+            "price": str(record.price) if record.price else None,
+            "price_unit": record.price_unit,
+            "usage": record.usage,
+            "usage_unit": record.usage_unit,
+        }
+        for record in records
+    ]
 
 
 def _message_to_dict(message) -> dict[str, Any]:

@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any
 
 from fastmcp import FastMCP
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from . import __version__
 from . import client as twilio_client
-from .config import E164_PATTERN, get_settings
+from .config import E164_PATTERN, get_settings, setup_logging
 from . import store
+
+logger = logging.getLogger(__name__)
 
 MESSAGE_SID_PATTERN = r"^SM[0-9A-Fa-f]{32}$"
 PhoneNumber = Annotated[str, Field(pattern=E164_PATTERN)]
@@ -21,11 +25,12 @@ MessageSid = Annotated[str, Field(pattern=MESSAGE_SID_PATTERN)]
 mcp = FastMCP(
     "twilio_sms_mcp",
     instructions=(
-        "You are connected to the Twilio SMS MCP server. "
+        "You are connected to the Twilio SMS MCP server v{version}. "
         "Use sms_list_inbox to inspect inbound messages, sms_send to send messages, "
-        "and sms_get_conversation to review a thread. "
-        "All phone numbers must use E.164 format such as +12025551234."
-    ),
+        "sms_get_conversation to review a thread, and sms_usage_stats to check usage. "
+        "All phone numbers must use E.164 format such as +12025551234. "
+        "For privacy, use sms_redact_message to remove message bodies from Twilio."
+    ).format(version=__version__),
 )
 
 
@@ -133,6 +138,68 @@ class LookupInput(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
 
     phone_number: PhoneNumber = Field(..., description="Phone number to look up in E.164 format.")
+
+
+class FormatNumberInput(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+
+    phone_number: str = Field(
+        ...,
+        min_length=3,
+        max_length=20,
+        description="Phone number in any common format to validate and reformat to E.164.",
+    )
+
+
+class UsageStatsInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    category: str = Field(default="sms", description="Usage category: 'sms', 'sms-inbound', 'sms-outbound', 'mms', etc.")
+    days: int = Field(default=30, ge=1, le=90, description="Number of recent days to retrieve.")
+
+
+# ---------------------------------------------------------------------------
+# Resources
+# ---------------------------------------------------------------------------
+
+@mcp.resource("twilio://account")
+def account_resource() -> str:
+    """High-level summary of the connected Twilio account."""
+    settings = get_settings()
+    return _json({
+        "account_sid": settings.account_sid,
+        "from_number": settings.from_number,
+        "messaging_service_sid": settings.messaging_service_sid,
+        "webhook_port": settings.webhook_port,
+        "server_version": __version__,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Prompts
+# ---------------------------------------------------------------------------
+
+@mcp.prompt()
+def draft_sms(to: str, topic: str) -> str:
+    """Help the user draft an SMS to *to* about *topic*."""
+    return (
+        f"Draft a concise SMS message to {to} about: {topic}. "
+        "Keep it under 160 characters if possible.  Return only the message body."
+    )
+
+
+@mcp.prompt()
+def summarize_conversation(number: str) -> str:
+    """Summarize all messages exchanged with *number*."""
+    return (
+        f"First call sms_get_conversation with number={number}, "
+        "then summarize the conversation highlighting key points, dates, and any pending action items."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Tools
+# ---------------------------------------------------------------------------
 
 
 @mcp.tool(
@@ -385,6 +452,7 @@ async def sms_lookup_number(params: LookupInput) -> str:
     annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True},
 )
 async def sms_account_info() -> str:
+    """Fetch account balance, status, and friendly name."""
     try:
         info = await twilio_client.get_account_info()
         return _json(info)
@@ -392,7 +460,58 @@ async def sms_account_info() -> str:
         return _json({"success": False, "error": twilio_client.handle_error(error)})
 
 
+@mcp.tool(
+    name="sms_redact_message",
+    annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True, "openWorldHint": True},
+)
+async def sms_redact_message(params: SidInput) -> str:
+    """Redact the body of a delivered message. Twilio keeps metadata but clears the text for compliance / privacy."""
+    try:
+        message = await twilio_client.redact_message(params.sid)
+        return _json({"success": True, "sid": message["sid"], "body": message["body"], "status": message["status"]})
+    except Exception as error:
+        return _json({"success": False, "error": twilio_client.handle_error(error)})
+
+
+@mcp.tool(
+    name="sms_format_number",
+    annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True},
+)
+async def sms_format_number(params: FormatNumberInput) -> str:
+    """Validate a phone number and return its E.164 form, national format, and country code."""
+    try:
+        result = await twilio_client.format_number(params.phone_number)
+        return _json(result)
+    except Exception as error:
+        return _json({"success": False, "error": twilio_client.handle_error(error)})
+
+
+@mcp.tool(
+    name="sms_usage_stats",
+    annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": True},
+)
+async def sms_usage_stats(params: UsageStatsInput) -> str:
+    """Retrieve daily SMS/MMS usage statistics for the account, useful for cost monitoring and analytics."""
+    try:
+        records = await twilio_client.get_usage_records(category=params.category, days=params.days)
+        total_count = sum(int(r.get("count") or 0) for r in records)
+        total_price = sum(float(r.get("price") or 0) for r in records)
+        return _json({
+            "category": params.category,
+            "days": params.days,
+            "total_messages": total_count,
+            "total_cost": f"{total_price:.4f}",
+            "currency": records[0]["price_unit"] if records else "USD",
+            "daily_records": records,
+        })
+    except Exception as error:
+        return _json({"success": False, "error": twilio_client.handle_error(error)})
+
+
 def main() -> None:
+    settings = get_settings()
+    setup_logging(settings.log_level)
+    logger.info("Starting Twilio SMS MCP server v%s", __version__)
     store.init_db()
     mcp.run()
 
