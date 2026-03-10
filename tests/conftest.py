@@ -10,7 +10,9 @@ def _test_env(monkeypatch: pytest.MonkeyPatch, tmp_path):
     monkeypatch.setenv("TWILIO_FROM_NUMBER", "+12025550100")
     monkeypatch.setenv("TWILIO_DB_PATH", str(tmp_path / "test.db"))
     monkeypatch.setenv("TWILIO_VALIDATE_WEBHOOK_SIGNATURES", "false")
-    monkeypatch.setenv("TWILIO_LOG_LEVEL", "INFO")
+    monkeypatch.setenv("TWILIO_LOG_LEVEL", "DEBUG")
+    monkeypatch.setenv("TWILIO_API_RETRY_ATTEMPTS", "0")
+    monkeypatch.setenv("TWILIO_API_RETRY_DELAY", "0.1")
 
     from twilio_sms_mcp import client as twilio_client
     from twilio_sms_mcp.config import reset_settings_cache

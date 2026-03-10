@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 
 import uvicorn
 
-from .config import get_settings
+from . import __version__
+from .config import get_settings, setup_logging
 from .store import init_db
 from .webhook import app
+
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:
     settings = get_settings()
+    setup_logging(settings.log_level)
+    logger.info("Twilio SMS MCP server v%s starting", __version__)
     init_db()
 
     webhook_server = uvicorn.Server(
@@ -25,6 +31,7 @@ def main() -> None:
         )
     )
     threading.Thread(target=webhook_server.run, name="twilio-webhook", daemon=True).start()
+    logger.info("Webhook server listening on 0.0.0.0:%d", settings.webhook_port)
 
     from .server import main as run_mcp_server
 
