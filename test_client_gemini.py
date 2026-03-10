@@ -32,7 +32,7 @@ import httpx
 
 GEMINI_API_KEY = os.getenv(
     "GEMINI_API_KEY",
-    "AIzaSyA1QcCaV9GOFDpwmPxwj6W1CY0XTcqxzug",
+    "",
 )
 GEMINI_MODEL = "gemini-2.0-flash"
 GEMINI_URL = (
