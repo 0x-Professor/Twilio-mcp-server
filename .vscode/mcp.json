@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "twilio-sms-mcp": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-m", "twilio_sms_mcp.boot"]
+    }
+  }
+}
