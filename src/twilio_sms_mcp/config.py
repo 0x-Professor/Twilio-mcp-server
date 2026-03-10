@@ -73,6 +73,11 @@ class Settings(BaseSettings):
     api_retry_attempts: int = Field(default=3, alias="TWILIO_API_RETRY_ATTEMPTS", ge=0, le=10)
     api_retry_delay: float = Field(default=1.0, alias="TWILIO_API_RETRY_DELAY", ge=0.1, le=30.0)
 
+    # MCP transport settings
+    mcp_transport: str = Field(default="stdio", alias="MCP_TRANSPORT")
+    mcp_host: str = Field(default="0.0.0.0", alias="MCP_HOST")
+    mcp_port: int = Field(default=8000, alias="MCP_PORT", ge=1, le=65535)
+
     @field_validator("messaging_service_sid", mode="before")
     @classmethod
     def _blank_service_sid_to_none(cls, value: object) -> object:
@@ -112,6 +117,15 @@ class Settings(BaseSettings):
         normalized = value.upper()
         if normalized not in allowed:
             raise ValueError(f"log_level must be one of {allowed}")
+        return normalized
+
+    @field_validator("mcp_transport")
+    @classmethod
+    def _validate_mcp_transport(cls, value: str) -> str:
+        allowed = {"stdio", "sse", "http"}
+        normalized = value.lower()
+        if normalized not in allowed:
+            raise ValueError(f"MCP_TRANSPORT must be one of {allowed}")
         return normalized
 
     @property
