@@ -513,7 +513,19 @@ def main() -> None:
     setup_logging(settings.log_level)
     logger.info("Starting Twilio SMS MCP server v%s", __version__)
     store.init_db()
-    mcp.run()
+
+    transport = settings.mcp_transport
+    if transport in ("sse", "http"):
+        logger.info(
+            "MCP %s transport on %s:%d (endpoint: /mcp/)",
+            transport,
+            settings.mcp_host,
+            settings.mcp_port,
+        )
+        mcp.run(transport=transport, host=settings.mcp_host, port=settings.mcp_port)
+    else:
+        logger.info("MCP stdio transport")
+        mcp.run()
 
 
 if __name__ == "__main__":
